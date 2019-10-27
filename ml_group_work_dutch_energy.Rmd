@@ -1,0 +1,248 @@
+---
+title: "MPM02: Group Work"
+author: "Authors: Tu Tran, Vanya Todorova, Luca Hüsler"
+date: "1 10 2019"
+output: html_document
+---
+
+## Install and load packages
+```{r, message=FALSE}
+usePackage <- function(p) 
+{
+  if (!is.element(p, installed.packages()[,1]))
+    install.packages(p, dep = TRUE)
+  require(p, character.only = TRUE)
+}
+
+packages <- c('plyr', 'tidyverse', 'ggplot2')
+
+for (i in packages){
+  usePackage(i)
+}
+```
+
+## Read files to raw data frame
+```{r message=FALSE}
+
+# custom function to add additional column year to the data frame
+readcsv <- function(f) {
+  flen <- nchar(f)
+  fyear <- substring(f, flen-7, flen-4)
+  fdata <- read.csv(f, header=TRUE, sep=",")
+  fdata <- cbind(year=strtoi(fyear), fdata)
+  return (fdata)
+}
+
+# define path to data
+path_data <- '../data/dutch_energy/Electricity/'
+
+# create list of files to import
+files <- list.files(path = path_data, pattern = '*.csv', full.names = T)
+
+# read and combine all csv-files into a single dataframe with ldply (plyr)
+data_raw <- ldply(files, readcsv)
+
+# check if new column of year added
+print(dim(data_raw))
+head(data_raw)
+
+```
+
+
+## Clean data
+
+Since the data for the provider "enexis" is missing in 2009, we will exclude this year for the analysis:
+```{r}
+data_raw <- data_raw[data_raw$year != 2009,]
+
+# The year indicated in the CSV-files represents the year of data collection, the actual data is from the year before.
+# To be clear about this, we substract 1 from every year
+data_raw$year <- as.factor(data_raw$year -1)
+
+# Check that 2009 no longer exists in the column 'year'
+table(data_raw$year)
+```
+
+```{r}
+# check missing values of all column
+colMeans(is.na(data_raw))
+# ok, these 3 columns have more missing values and they are not needed for the analysis -> drop these columns
+drops <- c("purchase_area", "street", "city",  "type_conn_perc", "type_of_connection")
+newdata <- data_raw[, !(names(data_raw) %in% drops)]
+# check the data frame after dropping
+dim(data_raw)
+dim(newdata)
+# check missing values again after dropping
+colMeans(is.na(newdata))
+# very small amount of delivery_perc has missing values and can be dropped (very limitted data)
+newdata <- newdata[!is.na(newdata$delivery_perc),]
+# check for distinction of each row (unique observation unit)
+distinctdataraw <- distinct(newdata)
+nrow(distinctdataraw)
+nrow(newdata)
+
+```
+
+## enhance the data with additional aggregated columns
+```{r}
+newdata <- cbind(newdata, 
+                 annual_consume_lowtarif = newdata$annual_consume_lowtarif_perc / 100 * newdata$annual_consume,
+                 delivery_give_back = (100 - newdata$delivery_perc) / 100 * newdata$annual_consume,
+                 consume_per_connection = (newdata$annual_consume / newdata$num_connections) * (newdata$perc_of_active_connections / 100))
+
+names(newdata)
+head(newdata, 3)
+
+```
+
+
+## Exploring the clean data
+```{r}
+# check summary (min, max, 1,3 quantiles, median, mean), check data consistency
+summary(newdata)
+str(newdata)
+```
+
+### Visual overview
+Before entering the analysis, it is important to get a feeling for the data and variables of interest. This can be achieved by creating some basic plots.
+
+#### Evolution of total electricity consumption per year
+```{r}
+newdata %>%
+  select(year, annual_consume) %>%
+  group_by(year) %>%
+  summarise(sum_consumption = sum(annual_consume)) %>%
+  ggplot() + 
+  geom_col(aes(year, sum_consumption)) +
+  labs(title = "Total electricity consumption 2009 - 2018",
+           y = "Electricity consumption (kwh)",
+           x = "Year")
+
+```
+We see that the total electricita consumption is rather stable over the years, even a little bit descending.
+
+
+#### Evolution of smartmeter percentage per year
+```{r}
+newdata %>%
+  select(year, smartmeter_perc) %>%
+  group_by(year) %>%
+  summarise(mean_smartmeter = mean(smartmeter_perc)) %>%
+  ggplot() + geom_col(aes(year, mean_smartmeter), fill="#880011") +
+  labs(title = "Evolution of electricity consumption 2009 - 2018",
+           y = "Mean smartmeter percentage",
+           x = "Year")
+
+```
+We can see that the mean smartmeter percentage develops in an exponential way. This gives us a first hint: There is a strong correlation between smartmeter percentage and year. This should be considered in the model.
+
+#### Number of active connections
+```{r}
+newdata %>%
+  select(year, num_connections, perc_of_active_connections) %>%
+  mutate(num_active_connections = num_connections*perc_of_active_connections/100) %>%
+  group_by(year) %>%
+  summarise(sum_active_connections = sum(num_active_connections)) %>%
+  ggplot() + geom_col(aes(year, sum_active_connections), fill="#880011") +
+  labs(title = "Evolution of electricity consumption 2009 - 2018",
+           y = "Mean smartmeter percentage",
+           x = "Year")
+
+
+```
+
+#### Evolution of mean consume per connection
+```{r}
+newdata %>%
+  select(year, consume_per_connection) %>%
+  group_by(year) %>%
+  summarise(mean_consume_per_connection = mean(consume_per_connection)) %>%
+  ggplot() + geom_col(aes(year, mean_consume_per_connection), fill="#880011") +
+  labs(title = "Evolution of consume per connection 2009 - 2018",
+           y = "Mean consume per connection",
+           x = "Year")
+
+
+```
+
+## Prepare train (30%) and test (70%) dataset
+```{r}
+
+set.seed(8)
+trainindex<- sample(nrow(newdata), 0.3*nrow(newdata))
+newdata.train <- newdata[trainindex, ]
+newdata.test <- newdata[-trainindex, ]
+
+```
+
+## Part 1.1: Relation between smart meter percentage and total consumption of electricity
+# A: Linear Model
+```{r}
+# ??? not sure if model based on percentage ok or not?
+fit <- lm(delivery_perc ~ smartmeter_perc, data=newdata.train)
+trainpred <- predict(fit, newdata.train)
+testpred <- predict(fit, newdata.test)
+# test error
+testerror <- mean((testpred - newdata.test$delivery_perc)^2)
+testerror
+# train error
+trainerror <- mean((trainpred - newdata.train$delivery_perc)^2)
+trainerror
+# test/train error ratio
+ratio_test_train <- testerror/trainerror
+ratio_test_train
+# R squared
+summary <- summary(fit)
+summary$r.squared
+
+```
+
+First, we create a linear model $smartmeter\_perc = \beta_0 + \beta_1*annual\_consume$ by using the train dataset that follows.
+
+```{r}
+
+lm.smartmeter <- lm(smartmeter_perc ~ annual_consume + num_connections, data=newdata.train[newdata.train$year == 2018,])
+summary(lm.smartmeter)
+```
+
+```{r}
+plot(newdata.train$smartmeter_perc[newdata.train$year == 2018], newdata.train$annual_consume[newdata.train$year == 2018])
+```
+
+
+# B: SVM Model
+
+```{r}
+
+
+```
+
+# Part 1.2:  relationship between the ratio of low_tarif electricity consumption (low_tarif / total_consumption) and the same predictor
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
