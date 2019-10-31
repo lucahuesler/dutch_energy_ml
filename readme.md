@@ -10,7 +10,7 @@ For description of the dataset, see: https://www.kaggle.com/lucabasa/dutch-energ
 
 General Formula: 
 
-$annual\_consume = \beta_0 + \beta1*smartmeter\_perc + [...]$
+![annual\_consume = \beta_0 + \beta1*smartmeter\_perc + [...]](https://latex.codecogs.com/gif.latex?annual%5C_consume%20%3D%20%5Cbeta_0%20&plus;%20%5Cbeta1*smartmeter%5C_perc%20&plus;%20%5B...%5D)
 
 - Idea: Try to use smartmeter percentage as a indirect way to consider self production in the 
   model.
@@ -20,7 +20,7 @@ $annual\_consume = \beta_0 + \beta1*smartmeter\_perc + [...]$
 
 General formula:
 
-$annual\_consume\_low\_tarif = \beta_0 + \beta1*smartmeter\_perc + [...]$
+![annual\_consume\_low\_tarif = \beta_0 + \beta1*smartmeter\_perc + [...]](https://latex.codecogs.com/gif.latex?annual%5C_consume%5C_low%5C_tarif%20%3D%20%5Cbeta_0%20&plus;%20%5Cbeta1*smartmeter%5C_perc%20&plus;%20%5B...%5D)
 
 - Idea: Smart meter steers consumption and tells you when to use which device (e.g. better to use washing machine at night)
 - Other predictors may also be considered in the model
